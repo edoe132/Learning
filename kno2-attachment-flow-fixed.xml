@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:kno2="http://www.mulesoft.org/schema/mule/kno2"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/kno2 http://www.mulesoft.org/schema/mule/kno2/current/mule-kno2.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<sub-flow name="create_message_id_flow" doc:id="c1787888-3e27-4f2c-a042-881371b961d1">
+		<logger level="INFO" doc:name="Getting Token" doc:id="e2f11d9d-851a-46f3-8233-407f757f9d80" message="Getting Token"/>
+		<flow-ref doc:name="Get Token" doc:id="82f17921-8da5-4894-9185-db7cc0dfb338" name="common_get-kno2-token" />
+		<logger level="INFO" doc:name="Got a Token" doc:id="4130ba3b-4278-4a03-a034-275a8de81904" message="#[payload]"/>
+		<kno2:messages-create-message doc:name="Messages Create Message" doc:id="34ca280d-de34-45a3-9173-fa525607f612" config-ref="Kno2_Connector" appIdHeader="${kno2.appId}">
+		</kno2:messages-create-message>
+		<set-variable value="#[%dw 2.0&#10;output text/plain&#10;var Id = payload.id&#10;---&#10;Id]" doc:name="set-message-id" doc:id="07c139fd-3b4f-415b-b46a-4e71a494a502" variableName="messageId" />
+		<logger level="INFO" doc:name="Payload" doc:id="54b93b41-7b2d-4745-b828-1265443ef76a" message="#[output application/json --- payload]" />
+		<logger level="INFO" doc:name="Message ID" doc:id="6a6a8762-8e82-45c8-b04a-935463cfa3f0" message="#[vars.messageId]" />
+	</sub-flow>
+	<sub-flow name="kno2_attachment_flow" doc:id="725e9f21-c672-400a-8935-5fc6d6f37401" >
+		<logger level="DEBUG" doc:name="Attach File(s)" doc:id="ef6c1a78-6428-482b-9ca9-c5d71c132a28" message="Attaching files"/>
+		<ee:transform doc:name="Transform Message" doc:id="5c5ae9ed-4a6b-46e1-8911-59163434d9a7" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+	payload.parts]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value="#[%dw 2.0&#10;output text/plain&#10;var Id = attributes.uriParams.id&#10;---&#10;Id]" doc:name="set-message-id" doc:id="8119c51b-d418-4da9-a076-0b945438e210" variableName="id" />
+		<logger level="INFO" doc:name="Message ID" doc:id="0fed23aa-ee4f-40e6-9efc-8db78fe6fad8" message='#["DEBUG: Calling Kno2. MessageId Value: [" ++ (vars.id default "EMPTY/NULL") ++ "]"]'/>
+		<set-variable value='#[payload.file.headers."Content-Type"]' doc:name="Content type" doc:id="b1dba4ff-b355-4ea3-a9ef-216a3f462ded" variableName="vContentType"/>
+		<set-variable value="#[payload.file.headers.'Content-Disposition'.filename]" doc:name="Filename" doc:id="dfc05534-ed23-4a36-bd14-1919148ab298" variableName="vFileName"/>
+		<set-variable value="#[payload.file.content]" doc:name="File content" doc:id="3cdfd281-cd3f-479f-b6de-19f5e517d531" variableName="vFileContent"/>
+		<set-variable value="#[payload.attachmentMeta.content]" doc:name="Attachment Metadata" doc:id="39b11ace-822b-4939-9cfd-0339a2045221" variableName="vAttachmentMeta"/>
+		<logger level="INFO" doc:name="Logger" doc:id="52318b9e-5a05-4bdc-b3c7-58fb4f5694c6" message="#[payload]"/>
+		<flow-ref doc:name="Get Token" doc:id="c87f401e-3c42-430b-b9fa-2f8768c5e722" name="common_get-kno2-token" targetValue="#[vars.access_token]"/>
+		<logger level="INFO" doc:name="Logger" doc:id="73872094-c796-4d76-9b71-4beac9b8cb4d" message="#[vars.access_token]" />
+		<!-- 
+			FIX #1: Use the attachment metadata from the variable instead of the hardcoded payload.
+			The previous transform was overwriting the payload with hardcoded values, but then
+			the attachment operation was using vars.vAttachmentMeta anyway. This transform now
+			properly uses the attachment metadata that was extracted from the incoming payload.
+		-->
+		<ee:transform doc:name="Transform Attachment Metadata" doc:id="05194476-0003-4f9f-aed1-537135618364" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+vars.vAttachmentMeta]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<!-- 
+			FIX #2: Changed config-ref from "Kno2_Config" to "Kno2_Connector" to match 
+			the configuration reference used by other Kno2 operations in this flow.
+			This ensures consistent authentication and connection settings.
+		-->
+		<kno2:messages-create-attachment doc:name="Messages Create Attachment" doc:id="6643904a-2b9b-44e1-8987-122867c6ba3a" config-ref="Kno2_Connector" idUriParam="#[vars.id as String]" appIdHeader="${kno2.appId}" responseTimeout="2" responseTimeoutUnit="MINUTES">
+			<kno2:messages-create-attachment-file-body><![CDATA[#[vars.vFileContent]]]></kno2:messages-create-attachment-file-body>
+			<kno2:messages-create-attachment-metadata-body><![CDATA[#[payload]]]></kno2:messages-create-attachment-metadata-body>
+			<kno2:custom-headers><![CDATA[#[output application/java
+---
+{
+	"filename": vars.vFileName,
+	"Content-Type": vars.vContentType
+}]]]></kno2:custom-headers>
+		</kno2:messages-create-attachment>
+		<logger level="INFO" doc:name="Logger" doc:id="5eb1f78f-0efc-4de2-8938-cedf537dfd3d" message="#[payload]"/>
+		<logger level="INFO" doc:name="log-attachment-id" doc:id="bef71931-b962-42b4-a8e1-1c9678433762" message="#[output application/json --- payload]" />
+	</sub-flow>
+	<sub-flow name="kno2_send_release_flow" doc:id="3e635d5a-0080-4988-b729-503963227313" >
+		<logger level="INFO" doc:name="Sending Message" doc:id="dcde1a21-ec22-4f04-b3e5-4ddb99a64087" message="Sending Message"/>
+		<ee:transform doc:name="Transform Message" doc:id="7c76917a-ce3f-49f7-aa0a-dcceb3f60632" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value="#[%dw 2.0&#10;output text/plain&#10;var Id = attributes.uriParams.id&#10;---&#10;Id]" doc:name="set-message-id" doc:id="62fee402-a3f8-489b-ac9f-77ea920e5bd6" variableName="messageId" />
+		<set-variable value='#[payload.subject]' doc:name="set-subject" doc:id="51bfe953-979f-4664-a692-0e87d9ee6526" variableName="subject" />
+		<set-variable value='#[payload.toAddress]' doc:name="set-toAddress" doc:id="012c0c71-a781-407c-ac45-ccabee6edd85" variableName="toAddress" />
+		<set-variable value='#[payload.fromAddress]' doc:name="set-fromAddress" doc:id="fd41047f-c2af-4a4f-9c42-989a614ae1cb" variableName="fromAddress" />
+		<set-variable value="#[payload.patient]" doc:name="set-patient" doc:id="89156928-0be0-4506-a439-0145382020ed" variableName="patient"/>
+		<ee:transform doc:name="create-send-release-request" doc:id="13e16e73-e017-4551-aac7-0a13c27dfb7f" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="Get Token" doc:id="ea7f9996-e1d0-457c-901e-6c64ef971228" name="common_get-kno2-token" />
+		<ee:transform doc:name="Transform Message" doc:id="7d861fb9-4046-4aec-b1f3-b6615c7d196a" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	subject: vars.subject,
+	toAddress: vars.toAddress,
+	fromAddress: vars.fromAddress,
+	patient: vars.patient
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<kno2:messages-send-release doc:name="Messages Send Release" doc:id="5cd03429-b064-4be8-b677-23d7b0eafb2a" config-ref="Kno2_Connector" idUriParam="#[vars.messageId]" appIdHeader="${kno2.appId}" >
+		</kno2:messages-send-release>
+		<logger level="INFO" doc:name="log-payload" doc:id="1d7968ca-a5b2-4d63-8f95-6d839f44be30" message='#["Successfully sent the data to Kno2"]' />
+	</sub-flow>
+</mule>
